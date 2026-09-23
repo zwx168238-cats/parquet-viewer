@@ -39,8 +39,7 @@ struct QueryResult {
 /// 打开一个 in-memory DuckDB 连接,并把目标 parquet 文件/目录注册为视图 `parquet_view`。
 /// 传入目录时 DuckDB 会自动递归读取其中所有 parquet 文件(含 Hive 分区目录)。
 fn open_conn(path: &str) -> Result<Connection, String> {
-    let conn =
-        Connection::open_in_memory().map_err(|e| format!("无法创建内存数据库连接: {e}"))?;
+    let conn = Connection::open_in_memory().map_err(|e| format!("无法创建内存数据库连接: {e}"))?;
     let escaped = path.replace('\'', "''");
     conn.execute_batch(&format!(
         "CREATE OR REPLACE VIEW parquet_view AS SELECT * FROM read_parquet('{escaped}')"
@@ -115,7 +114,9 @@ fn describe_schema(conn: &Connection) -> Result<Vec<ColumnInfo>, String> {
     let mut stmt = conn
         .prepare("DESCRIBE parquet_view")
         .map_err(|e| format!("读取 schema 失败: {e}"))?;
-    let mut rows = stmt.query([]).map_err(|e| format!("读取 schema 失败: {e}"))?;
+    let mut rows = stmt
+        .query([])
+        .map_err(|e| format!("读取 schema 失败: {e}"))?;
     let mut out = Vec::new();
     while let Some(row) = rows.next().map_err(|e| e.to_string())? {
         let name: String = row.get(0).map_err(|e| e.to_string())?;
@@ -147,9 +148,7 @@ fn run_query(path: String, sql: String, limit: usize) -> Result<QueryResult, Str
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| format!("SQL 解析失败: {e}"))?;
-    let mut rows = stmt
-        .query([])
-        .map_err(|e| format!("SQL 执行失败: {e}"))?;
+    let mut rows = stmt.query([]).map_err(|e| format!("SQL 执行失败: {e}"))?;
 
     // 通过 rows.as_ref() 获取列信息(语句已执行,且避免与 rows 的可变借用冲突)
     let (ncols, columns, column_types) = {
@@ -243,9 +242,7 @@ fn value_to_json(v: &Value) -> serde_json::Value {
 fn number_from_f64(x: f64) -> serde_json::Value {
     use serde_json::Value as J;
     if x.is_finite() {
-        J::Number(
-            serde_json::Number::from_f64(x).unwrap_or_else(|| serde_json::Number::from(0)),
-        )
+        J::Number(serde_json::Number::from_f64(x).unwrap_or_else(|| serde_json::Number::from(0)))
     } else {
         J::String(x.to_string())
     }
@@ -344,7 +341,8 @@ pub fn run() {
                 .separator()
                 .item(&PredefinedMenuItem::close_window(app, None)?)
                 .build()?;
-            let help_about = MenuItemBuilder::with_id("about", "About Parquet Viewer").build(app)?;
+            let help_about =
+                MenuItemBuilder::with_id("about", "About Parquet Viewer").build(app)?;
             let help = SubmenuBuilder::with_id(app, "help", "Help")
                 .item(&help_about)
                 .build()?;
