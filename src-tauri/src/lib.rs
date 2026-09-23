@@ -214,7 +214,7 @@ fn value_to_json(v: &Value) -> serde_json::Value {
         }
         Value::Text(s) => J::String(s.clone()),
         Value::Enum(s) => J::String(s.clone()),
-        Value::Blob(b) => J::String(format_blob(b)),
+        Value::Blob(b) => blob_to_json(b),
         Value::Geometry(b) => J::String(format!("[GEOMETRY {} bytes]", b.len())),
         Value::List(items) | Value::Array(items) => {
             J::Array(items.iter().map(value_to_json).collect())
@@ -301,6 +301,193 @@ fn format_blob(b: &[u8]) -> String {
     }
 }
 
+/// 通过 magic bytes 检测 blob 是否为图片/音频,返回 (kind, mime)
+fn detect_media(b: &[u8]) -> Option<(&'static str, &'static str)> {
+    if b.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+        Some(("image", "image/png"))
+    } else if b.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some(("image", "image/jpeg"))
+    } else if b.starts_with(b"GIF8") {
+        Some(("image", "image/gif"))
+    } else if b.starts_with(b"BM") {
+        Some(("image", "image/bmp"))
+    } else if b.len() >= 12 && &b[0..4] == b"RIFF" && &b[8..12] == b"WEBP" {
+        Some(("image", "image/webp"))
+    } else if b.len() >= 12 && &b[0..4] == b"RIFF" && &b[8..12] == b"WAVE" {
+        Some(("audio", "audio/wav"))
+    } else if b.starts_with(b"fLaC") {
+        Some(("audio", "audio/flac"))
+    } else if b.starts_with(b"OggS") {
+        Some(("audio", "audio/ogg"))
+    } else if b.starts_with(b"ID3") || (b.len() > 1 && b[0] == 0xFF && (b[1] & 0xE0) == 0xE0) {
+        Some(("audio", "audio/mpeg"))
+    } else {
+        None
+    }
+}
+
+/// blob 列:媒体类型返回可渲染结构(含 base64),其余保持 hex 摘要
+fn blob_to_json(b: &[u8]) -> serde_json::Value {
+    use base64::Engine;
+    use serde_json::Value as J;
+    match detect_media(b) {
+        Some((kind, mime)) => serde_json::json!({
+            "__blob": true,
+            "kind": kind,
+            "mime": mime,
+            "size": b.len(),
+            "base64": base64::engine::general_purpose::STANDARD.encode(b),
+        }),
+        None => J::String(format_blob(b)),
+    }
+}
+
+/// 把 DuckDB 列类型映射为通用 SQL 建表类型
+fn sql_type(t: &str) -> &'static str {
+    let u = t.to_uppercase();
+    // 数组 / 结构 / MAP 等复杂类型先降级为 VARCHAR,避免被标量规则误匹配
+    if u.contains('[')
+        || u.contains("STRUCT")
+        || u.contains("MAP")
+        || u.contains("LIST")
+        || u.contains("UNION")
+    {
+        return "VARCHAR";
+    }
+    if u.contains("TIMESTAMP") {
+        "TIMESTAMP"
+    } else if u.contains("DATE") {
+        "DATE"
+    } else if u.contains("TIME") {
+        "TIME"
+    } else if u.contains("BOOLEAN") {
+        "BOOLEAN"
+    } else if u.contains("DOUBLE") {
+        "DOUBLE"
+    } else if u.contains("FLOAT") || u.contains("REAL") {
+        "FLOAT"
+    } else if u.contains("BIGINT") {
+        "BIGINT"
+    } else if u.contains("INT") {
+        "INTEGER"
+    } else if u.contains("BLOB") || u.contains("BINARY") {
+        "BLOB"
+    } else if u.contains("VARCHAR") || u.contains("TEXT") || u.contains("CHAR") {
+        "VARCHAR"
+    } else {
+        // LIST / STRUCT / MAP 等复杂类型降级为 VARCHAR
+        "VARCHAR"
+    }
+}
+
+/// 参考原版功能:从 parquet schema 生成 CREATE TABLE 语句
+#[tauri::command]
+fn generate_sql_schema(path: String) -> Result<String, String> {
+    let conn = open_conn(&path)?;
+    let mut stmt = conn
+        .prepare("DESCRIBE parquet_view")
+        .map_err(|e| format!("读取 schema 失败: {e}"))?;
+    let mut rows = stmt
+        .query([])
+        .map_err(|e| format!("读取 schema 失败: {e}"))?;
+    let mut cols = Vec::new();
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let name: String = row.get(0).map_err(|e| e.to_string())?;
+        let ty: String = row.get(1).map_err(|e| e.to_string())?;
+        cols.push((name, ty));
+    }
+    drop(rows);
+    drop(stmt);
+    if cols.is_empty() {
+        return Err("schema 为空".to_string());
+    }
+    let width = cols.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
+    let body: Vec<String> = cols
+        .iter()
+        .map(|(name, ty)| format!("    {name:<width$} {}", sql_type(ty)))
+        .collect();
+    Ok(format!(
+        "-- Generated from: {path}\nCREATE TABLE parquet_table (\n{}\n);\n",
+        body.join(",\n")
+    ))
+}
+
+/// 导出媒体数据:弹保存对话框并把 base64 内容写入文件
+#[tauri::command]
+fn export_base64(
+    app: tauri::AppHandle,
+    base64_data: String,
+    default_name: String,
+) -> Result<Option<String>, String> {
+    use base64::Engine;
+    use tauri_plugin_dialog::DialogExt;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&base64_data)
+        .map_err(|e| format!("base64 解码失败: {e}"))?;
+    let Some(fp) = app
+        .dialog()
+        .file()
+        .set_file_name(&default_name)
+        .blocking_save_file()
+    else {
+        return Ok(None); // 用户取消
+    };
+    let Some(path) = fp.as_path() else {
+        return Err("无法解析保存路径".to_string());
+    };
+    std::fs::write(path, &bytes).map_err(|e| format!("写入失败: {e}"))?;
+    Ok(Some(path.display().to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{detect_media, sql_type};
+
+    #[test]
+    fn detects_png() {
+        let b = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        assert_eq!(detect_media(&b), Some(("image", "image/png")));
+    }
+
+    #[test]
+    fn detects_jpeg() {
+        assert_eq!(
+            detect_media(&[0xFF, 0xD8, 0xFF, 0xE0, 0x00]),
+            Some(("image", "image/jpeg"))
+        );
+    }
+
+    #[test]
+    fn detects_wav() {
+        let mut b = b"RIFF".to_vec();
+        b.extend_from_slice(&[0x24, 0x00, 0x00, 0x00]);
+        b.extend_from_slice(b"WAVE");
+        assert_eq!(detect_media(&b), Some(("audio", "audio/wav")));
+    }
+
+    #[test]
+    fn detects_mp3() {
+        assert_eq!(detect_media(b"ID3\x04\x00"), Some(("audio", "audio/mpeg")));
+    }
+
+    #[test]
+    fn non_media_blob() {
+        assert_eq!(detect_media(&[0x00, 0x01, 0x02, 0x03]), None);
+        assert_eq!(detect_media(b"hello world"), None);
+    }
+
+    #[test]
+    fn type_mapping() {
+        assert_eq!(sql_type("VARCHAR"), "VARCHAR");
+        assert_eq!(sql_type("BIGINT"), "BIGINT");
+        assert_eq!(sql_type("DOUBLE"), "DOUBLE");
+        assert_eq!(sql_type("BOOLEAN"), "BOOLEAN");
+        assert_eq!(sql_type("TIMESTAMP WITH TIME ZONE"), "TIMESTAMP");
+        assert_eq!(sql_type("BLOB"), "BLOB");
+        assert_eq!(sql_type("INTEGER[]"), "VARCHAR"); // 复杂类型降级
+    }
+}
+
 /// 返回关于对话框所需的应用信息
 #[tauri::command]
 fn about_info() -> serde_json::Value {
@@ -315,7 +502,13 @@ fn about_info() -> serde_json::Value {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![open_path, run_query, about_info])
+        .invoke_handler(tauri::generate_handler![
+            open_path,
+            run_query,
+            about_info,
+            generate_sql_schema,
+            export_base64
+        ])
         .setup(|app| {
             // macOS 惯例:第一个菜单为应用名菜单,About 同时出现在应用菜单和 Help 菜单
             // (Help > About 参考原版 ParquetViewer 的布局)

@@ -12,6 +12,8 @@ Inspired by [mukunku/ParquetViewer](https://github.com/mukunku/ParquetViewer) (W
 - **Schema browser** — column names and types at a glance, plus row count and file size
 - **SQL query editor** — full SQL powered by DuckDB, query parquet files like a database
 - **Filter Query mode** — simplified filtering without writing SQL (like the original ParquetViewer), with record offset/count pagination
+- **Image & audio preview** — BLOB columns are auto-detected by magic bytes; images render as clickable thumbnails and audio as inline players, both previewable in a modal and exportable to disk
+- **Generate SQL schema** — one click produces a `CREATE TABLE` statement matching the parquet schema, ready to copy
 - **File metadata view** — inspect parquet internals via `parquet_metadata`
 - **Rich type rendering** — timestamps, dates, lists, structs, blobs (hex preview), NULLs
 - Native menu bar with **Help → About**
@@ -47,6 +49,8 @@ Download the installer for your platform from the [Releases](../../releases) pag
 4. Or use the **Filter Query** bar (no SQL needed): type a condition such as
    `repo_path = 'Android'`, set *Record Offset* / *Record Count*, and hit **Execute**.
    The generated SQL is shown in the editor so you can learn/tweak it.
+5. Click **SQL Schema** to generate a `CREATE TABLE` statement for the loaded file and copy it.
+6. Image/audio BLOB cells show a thumbnail or player — click to preview in a modal, then **Export** to save the binary to disk.
 
 ## Building from source
 

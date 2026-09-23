@@ -35,6 +35,7 @@
             <button class="btn small" data-sql="schema">表结构</button>
             <button class="btn small" data-sql="count">行数</button>
             <button class="btn small" data-sql="metadata">文件元数据</button>
+            <button class="btn small" id="btn-sql-schema">SQL Schema</button>
           </div>
         </div>
         <div class="filter-bar">
@@ -78,6 +79,30 @@
       </div>
     </section>
   </main>
+
+  <!-- 媒体预览对话框(图片/音频) -->
+  <div id="media-modal" class="modal-overlay hidden">
+    <div class="modal media-modal">
+      <div id="media-body" class="media-body"></div>
+      <p id="media-info" class="about-version"></p>
+      <div class="modal-actions">
+        <button id="media-export" class="btn primary">导出</button>
+        <button id="media-close" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SQL Schema 对话框 -->
+  <div id="schema-modal" class="modal-overlay hidden">
+    <div class="modal schema-modal">
+      <h3 class="about-name">SQL Schema(CREATE TABLE)</h3>
+      <pre id="schema-sql" class="schema-sql"></pre>
+      <div class="modal-actions">
+        <button id="schema-copy" class="btn primary">复制</button>
+        <button id="schema-close" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
 
   <!-- About 对话框 -->
   <div id="about-modal" class="modal-overlay hidden">

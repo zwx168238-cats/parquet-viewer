@@ -376,6 +376,79 @@ body {
   line-height: 1.7;
 }
 
+/* ---------- 媒体单元格(图片/音频) ---------- */
+.cell-thumb {
+  max-height: 52px;
+  max-width: 120px;
+  border-radius: 4px;
+  cursor: zoom-in;
+  vertical-align: middle;
+  background: #000;
+}
+
+.cell-thumb:hover {
+  outline: 2px solid var(--accent);
+}
+
+.cell-audio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cell-audio audio {
+  height: 32px;
+  max-width: 220px;
+}
+
+.media-modal {
+  max-width: 70vw;
+}
+
+.media-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.media-body img {
+  max-width: 60vw;
+  max-height: 60vh;
+  border-radius: 8px;
+  background: #000;
+}
+
+.media-body audio {
+  width: 420px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.schema-modal {
+  min-width: 480px;
+  max-width: 80vw;
+}
+
+.schema-sql {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0 16px;
+  max-height: 50vh;
+  overflow: auto;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+  white-space: pre;
+}
+
 /* ---------- 结果区 ---------- */
 .result-pane {
   flex: 1;

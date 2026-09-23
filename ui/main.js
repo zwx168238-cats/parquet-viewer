@@ -307,18 +307,135 @@ function renderResult(result) {
     idx.className = "num";
     idx.textContent = String(r + 1);
     tr.appendChild(idx);
-    for (const value of result.rows[r]) {
+    result.rows[r].forEach((value, c) => {
       const td = document.createElement("td");
-      const { text, cls } = cellContent(value);
-      if (cls) td.className = cls;
-      td.textContent = text;
-      td.title = text.length > 60 ? text : "";
+      const media = mediaElement(value, result.columns[c], r);
+      if (media) {
+        td.appendChild(media);
+      } else {
+        const { text, cls } = cellContent(value);
+        if (cls) td.className = cls;
+        td.textContent = text;
+        td.title = text.length > 60 ? text : "";
+      }
       tr.appendChild(td);
-    }
+    });
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
   el.resultContainer.appendChild(table);
+}
+
+// ---------- 媒体预览与导出(图片/音频) ----------
+
+function fmtSize(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function mediaExt(mime) {
+  const map = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/bmp": "bmp",
+    "image/webp": "webp",
+    "audio/wav": "wav",
+    "audio/flac": "flac",
+    "audio/ogg": "ogg",
+    "audio/mpeg": "mp3",
+  };
+  return map[mime] || "bin";
+}
+
+/** blob 媒体单元格:图片渲染缩略图,音频渲染播放器;非媒体返回 null */
+function mediaElement(value, colName, rowIdx) {
+  if (!value || typeof value !== "object" || !value.__blob) return null;
+  const src = `data:${value.mime};base64,${value.base64}`;
+  if (value.kind === "image") {
+    const img = document.createElement("img");
+    img.className = "cell-thumb";
+    img.src = src;
+    img.alt = colName;
+    img.title = `点击查看大图(${fmtSize(value.size)})`;
+    img.addEventListener("click", () => openMediaModal(value, colName, rowIdx));
+    return img;
+  }
+  if (value.kind === "audio") {
+    const wrap = document.createElement("div");
+    wrap.className = "cell-audio";
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.preload = "none";
+    audio.src = src;
+    wrap.appendChild(audio);
+    const btn = document.createElement("button");
+    btn.className = "btn small";
+    btn.textContent = "导出";
+    btn.addEventListener("click", () => exportMedia(value, colName, rowIdx));
+    wrap.appendChild(btn);
+    return wrap;
+  }
+  return null;
+}
+
+let currentMedia = null; // 当前预览的媒体对象
+
+function openMediaModal(value, colName, rowIdx) {
+  currentMedia = { value, colName, rowIdx };
+  const body = document.getElementById("media-body");
+  body.innerHTML = "";
+  const src = `data:${value.mime};base64,${value.base64}`;
+  if (value.kind === "image") {
+    const img = document.createElement("img");
+    img.src = src;
+    body.appendChild(img);
+  } else {
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.src = src;
+    body.appendChild(audio);
+  }
+  document.getElementById("media-info").textContent =
+    `${colName} · 第 ${rowIdx + 1} 行 · ${value.mime} · ${fmtSize(value.size)}`;
+  document.getElementById("media-modal").classList.remove("hidden");
+}
+
+function hideMediaModal() {
+  const body = document.getElementById("media-body");
+  body.innerHTML = ""; // 停止音频播放
+  document.getElementById("media-modal").classList.add("hidden");
+  currentMedia = null;
+}
+
+async function exportMedia(value, colName, rowIdx) {
+  const name = `${colName}_row${rowIdx + 1}.${mediaExt(value.mime)}`;
+  try {
+    const saved = await invoke("export_base64", {
+      base64Data: value.base64,
+      defaultName: name,
+    });
+    if (saved) setStatus(`已导出: ${saved}`);
+  } catch (e) {
+    showError(`导出失败: ${e}`);
+  }
+}
+
+// ---------- SQL Schema 生成 ----------
+
+async function showSqlSchema() {
+  if (!currentPath) {
+    showError("请先打开一个 Parquet 文件或目录");
+    return;
+  }
+  try {
+    const sql = await invoke("generate_sql_schema", { path: currentPath });
+    document.getElementById("schema-sql").textContent = sql;
+    document.getElementById("schema-modal").classList.remove("hidden");
+  } catch (e) {
+    showError(`生成 SQL Schema 失败: ${e}`);
+  }
 }
 
 // ---------- 事件绑定 ----------
@@ -400,6 +517,53 @@ document.addEventListener("keydown", (e) => {
 
 // 菜单 Help > About 触发(由 Rust 侧 emit)
 window.__TAURI__?.event?.listen("show-about", showAbout);
+
+// ---------- 媒体 / SQL Schema 对话框事件 ----------
+document.getElementById("media-close").addEventListener("click", hideMediaModal);
+
+document.getElementById("media-modal").addEventListener("click", (e) => {
+  if (e.target.id === "media-modal") hideMediaModal();
+});
+
+document.getElementById("media-export").addEventListener("click", () => {
+  if (currentMedia) {
+    exportMedia(currentMedia.value, currentMedia.colName, currentMedia.rowIdx);
+  }
+});
+
+document.getElementById("btn-sql-schema").addEventListener("click", showSqlSchema);
+
+document.getElementById("schema-close").addEventListener("click", () => {
+  document.getElementById("schema-modal").classList.add("hidden");
+});
+
+document.getElementById("schema-modal").addEventListener("click", (e) => {
+  if (e.target.id === "schema-modal") {
+    document.getElementById("schema-modal").classList.add("hidden");
+  }
+});
+
+document.getElementById("schema-copy").addEventListener("click", async () => {
+  const sql = document.getElementById("schema-sql").textContent;
+  try {
+    await navigator.clipboard.writeText(sql);
+    setStatus("SQL Schema 已复制到剪贴板");
+  } catch {
+    showError("复制失败,请手动选择文本复制");
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (!document.getElementById("media-modal").classList.contains("hidden")) {
+      hideMediaModal();
+    } else if (
+      !document.getElementById("schema-modal").classList.contains("hidden")
+    ) {
+      document.getElementById("schema-modal").classList.add("hidden");
+    }
+  }
+});
 
 // 启动提示:若不在 Tauri 环境内运行
 if (!invoke) {

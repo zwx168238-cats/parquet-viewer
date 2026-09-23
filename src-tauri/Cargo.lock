@@ -2661,6 +2661,7 @@ dependencies = [
 name = "parquet-viewer"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "duckdb",
  "serde",
  "serde_json",
