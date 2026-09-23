@@ -21,7 +21,7 @@ Inspired by [mukunku/ParquetViewer](https://github.com/mukunku/ParquetViewer) (W
 ## Installation
 
 Download the installer for your platform from the [Releases](../../releases) page:
-
+··
 | Platform | Architecture | Package |
 |---|---|---|
 | macOS | Apple Silicon (arm64) | `.dmg` |

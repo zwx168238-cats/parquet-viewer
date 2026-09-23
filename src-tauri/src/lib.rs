@@ -413,8 +413,12 @@ fn generate_sql_schema(path: String) -> Result<String, String> {
 }
 
 /// 导出媒体数据:弹保存对话框并把 base64 内容写入文件
+///
+/// 必须是 async command:阻塞式保存对话框 `blocking_save_file()` 若在同步 command
+/// (主线程)中调用会阻塞事件循环,导致整个应用卡死(转菊花)。async command 跑在
+/// 独立线程池,阻塞的是工作线程,主线程照常处理对话框与 UI。
 #[tauri::command]
-fn export_base64(
+async fn export_base64(
     app: tauri::AppHandle,
     base64_data: String,
     default_name: String,
