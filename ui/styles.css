@@ -324,7 +324,7 @@ body {
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 /* ---------- About 对话框 ---------- */
