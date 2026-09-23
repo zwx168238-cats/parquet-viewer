@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Parquet Viewer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="toolbar">
+    <div class="toolbar-left">
+      <button id="btn-open-file" class="btn primary">打开文件</button>
+      <button id="btn-open-dir" class="btn">打开目录</button>
+      <span id="current-path" class="path-label" title="">未打开文件</span>
+    </div>
+    <div class="toolbar-right">
+      <span id="file-stats" class="stats-label"></span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="panel-title">Schema</div>
+      <div id="schema-list" class="schema-list">
+        <div class="placeholder">打开 Parquet 文件后显示结构</div>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div class="query-pane">
+        <div class="query-toolbar">
+          <span class="query-label">SQL 查询(目标视图:<code>parquet_view</code>)</span>
+          <div class="quick-buttons">
+            <button class="btn small" data-sql="preview">预览数据</button>
+            <button class="btn small" data-sql="schema">表结构</button>
+            <button class="btn small" data-sql="count">行数</button>
+            <button class="btn small" data-sql="metadata">文件元数据</button>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <label
+            class="filter-label"
+            title="输入过滤条件(无需 SELECT 和 WHERE),如: repo_path = 'Android' AND controlled = TRUE"
+          >Filter Query (?)</label>
+          <input
+            id="filter-input"
+            class="filter-input"
+            type="text"
+            placeholder="如: repo_path = 'Android'"
+            spellcheck="false"
+          />
+          <button id="btn-filter-exec" class="btn filter-exec">Execute</button>
+          <button id="btn-filter-clear" class="btn">Clear</button>
+          <span class="offset-group">
+            <label for="offset-input">Record Offset:</label>
+            <input id="offset-input" type="number" min="0" value="0" />
+            <label for="count-input">Record Count:</label>
+            <input id="count-input" type="number" min="1" max="100000" value="1000" />
+          </span>
+        </div>
+        <textarea id="sql-editor" spellcheck="false" rows="5">SELECT * FROM parquet_view LIMIT 100;</textarea>
+        <div class="query-actions">
+          <button id="btn-run" class="btn primary">执行查询</button>
+          <span class="hint">Ctrl/Cmd + Enter</span>
+          <span id="query-status" class="query-status"></span>
+        </div>
+      </div>
+
+      <div id="error-banner" class="error-banner hidden"></div>
+
+      <div class="result-pane">
+        <div class="result-header">
+          <span id="result-info"></span>
+        </div>
+        <div id="result-container" class="result-container">
+          <div class="placeholder">执行查询后在此显示结果</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- About 对话框 -->
+  <div id="about-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <img src="icon.png" alt="app icon" class="about-icon" />
+      <h2 class="about-name">Parquet Viewer</h2>
+      <p id="about-version" class="about-version"></p>
+      <p id="about-license" class="about-license"></p>
+      <div class="about-credits">
+        <p>跨平台 Parquet 查看与 SQL 查询工具</p>
+        <p>Built with Tauri + DuckDB</p>
+        <p>Inspired by mukunku/ParquetViewer (GPL-3.0)</p>
+      </div>
+      <button id="about-close" class="btn primary">关闭</button>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

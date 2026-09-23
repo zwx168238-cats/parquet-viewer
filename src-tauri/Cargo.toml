@@ -1,0 +1,25 @@
+[package]
+name = "parquet-viewer"
+version = "0.1.0"
+description = "Cross-platform viewer for Apache Parquet files"
+license = "GPL-3.0-only"
+edition = "2021"
+
+[lib]
+name = "parquet_viewer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+duckdb = { version = "1", features = ["bundled"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
