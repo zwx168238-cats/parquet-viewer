@@ -18,8 +18,8 @@ Inspired by [mukunku/ParquetViewer](https://github.com/mukunku/ParquetViewer) (W
 - **Generate SQL schema** — one click produces a `CREATE TABLE` statement matching the parquet schema, ready to copy
 - **File metadata view** — inspect parquet internals via `parquet_metadata`
 - **Rich type rendering** — timestamps, dates, lists, structs, blobs (hex preview), NULLs
-- Native menu bar with **Help → About**
-- **Bilingual UI** — switch between Simplified Chinese and English at runtime via **Help → Language** (the choice is persisted)
+- Native menu bar — **About** and the **Language** submenu live in the app menu (Parquet Viewer), following macOS conventions
+- **Bilingual UI** — switch between Simplified Chinese and English at runtime via **Parquet Viewer → Language** (the choice is persisted)
 
 ## Installation
 
@@ -54,7 +54,7 @@ Download the installer for your platform from the [Releases](../../releases) pag
    The generated SQL is shown in the editor so you can learn/tweak it.
 5. Click **SQL Schema** to generate a `CREATE TABLE` statement for the loaded file and copy it.
 6. Image/audio BLOB cells show a thumbnail or player — click to preview in a modal, then **Export** to save the binary to disk.
-7. Switch the interface language via **Help → Language** (简体中文 / English); the choice is remembered across launches.
+7. Switch the interface language via **Parquet Viewer → Language** (简体中文 / English); the choice is remembered across launches.
 
 ## Building from source
 

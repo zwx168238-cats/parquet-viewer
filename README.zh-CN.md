@@ -18,8 +18,8 @@
 - **生成 SQL Schema** —— 一键生成与 parquet schema 对应的 `CREATE TABLE` 语句,可直接复制
 - **文件元数据视图** —— 通过 `parquet_metadata` 查看 parquet 内部信息
 - **丰富类型渲染** —— 时间戳、日期、列表、结构体、blob(hex 摘要)、NULL
-- 原生菜单栏,含 **Help → About(关于)**
-- **双语界面** —— 运行时通过 **Help → Language(语言)** 在简体中文与 English 之间切换,选择会被持久化
+- 原生菜单栏 —— **关于(About)** 与 **语言(Language)** 子菜单统一放在应用菜单(Parquet Viewer)下,符合 macOS 惯例
+- **双语界面** —— 运行时通过 **Parquet Viewer → 语言(Language)** 在简体中文与 English 之间切换,选择会被持久化
 
 ## 安装
 
@@ -54,7 +54,7 @@
    生成的 SQL 会显示在编辑器中,便于学习或微调。
 5. 点击 **SQL Schema** 为已加载文件生成 `CREATE TABLE` 语句并复制。
 6. 图片/音频 BLOB 单元格会显示缩略图或播放器 —— 点击可在弹窗中预览,再点 **导出** 把二进制保存到磁盘。
-7. 通过 **Help → Language(语言)** 切换界面语言(简体中文 / English),选择会被记住,下次启动依然生效。
+7. 通过 **Parquet Viewer → 语言(Language)** 切换界面语言(简体中文 / English),选择会被记住,下次启动依然生效。
 
 ## 从源码构建
 

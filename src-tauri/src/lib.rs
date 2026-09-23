@@ -639,16 +639,30 @@ fn set_app_language(app: tauri::AppHandle, lang: String) {
     }
 }
 
-/// 依据语言构建原生菜单。Help 下含 About 与 Language 子菜单(简体中文/English 勾选)。
+/// 依据语言构建原生菜单。About 与 Language 子菜单统一放在应用菜单(Parquet Viewer)
+/// 下,符合 macOS 惯例(About/设置/退出都在应用菜单)。
 /// Edit 菜单必须保留,否则 macOS 上 Cmd+C/V/X/Z 等编辑快捷键失效。
 fn build_menu(
     app: &tauri::AppHandle,
     lang: &str,
 ) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     let about_text = tr(lang, "关于 Parquet Viewer", "About Parquet Viewer");
-    let about = MenuItemBuilder::with_id("about", about_text.clone()).build(app)?;
+    let about = MenuItemBuilder::with_id("about", about_text).build(app)?;
+    // 语言子菜单:两项互斥勾选
+    let lang_zh = CheckMenuItemBuilder::with_id("lang-zh-CN", "简体中文")
+        .checked(lang == "zh-CN")
+        .build(app)?;
+    let lang_en = CheckMenuItemBuilder::with_id("lang-en", "English")
+        .checked(lang != "zh-CN")
+        .build(app)?;
+    let language = SubmenuBuilder::with_id(app, "language", tr(lang, "语言", "Language"))
+        .item(&lang_zh)
+        .item(&lang_en)
+        .build()?;
     let app_menu = SubmenuBuilder::with_id(app, "app", "Parquet Viewer")
         .item(&about)
+        .separator()
+        .item(&language)
         .separator()
         .item(&PredefinedMenuItem::quit(app, None)?)
         .build()?;
@@ -667,28 +681,10 @@ fn build_menu(
         .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
-    // 语言子菜单:两项互斥勾选
-    let lang_zh = CheckMenuItemBuilder::with_id("lang-zh-CN", "简体中文")
-        .checked(lang != "en")
-        .build(app)?;
-    let lang_en = CheckMenuItemBuilder::with_id("lang-en", "English")
-        .checked(lang == "en")
-        .build(app)?;
-    let language = SubmenuBuilder::with_id(app, "language", tr(lang, "语言", "Language"))
-        .item(&lang_zh)
-        .item(&lang_en)
-        .build()?;
-    let help_about = MenuItemBuilder::with_id("about", about_text).build(app)?;
-    let help = SubmenuBuilder::with_id(app, "help", tr(lang, "帮助", "Help"))
-        .item(&help_about)
-        .separator()
-        .item(&language)
-        .build()?;
     MenuBuilder::new(app)
         .item(&app_menu)
         .item(&edit)
         .item(&window)
-        .item(&help)
         .build()
 }
 
