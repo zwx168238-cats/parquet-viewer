@@ -1,5 +1,7 @@
 # Parquet Viewer
 
+[简体中文](README.zh-CN.md) | **English**
+
 A cross-platform desktop viewer for [Apache Parquet](https://parquet.apache.org/) files with built-in SQL query support, powered by [Tauri](https://tauri.app/) and [DuckDB](https://duckdb.org/).
 
 Inspired by [mukunku/ParquetViewer](https://github.com/mukunku/ParquetViewer) (Windows-only), this project brings similar capabilities to **macOS, Linux and Windows** from a single codebase.
@@ -17,11 +19,12 @@ Inspired by [mukunku/ParquetViewer](https://github.com/mukunku/ParquetViewer) (W
 - **File metadata view** — inspect parquet internals via `parquet_metadata`
 - **Rich type rendering** — timestamps, dates, lists, structs, blobs (hex preview), NULLs
 - Native menu bar with **Help → About**
+- **Bilingual UI** — switch between Simplified Chinese and English at runtime via **Help → Language** (the choice is persisted)
 
 ## Installation
 
 Download the installer for your platform from the [Releases](../../releases) page:
-··
+
 | Platform | Architecture | Package |
 |---|---|---|
 | macOS | Apple Silicon (arm64) | `.dmg` |
@@ -32,7 +35,7 @@ Download the installer for your platform from the [Releases](../../releases) pag
 
 ## Usage
 
-1. Click **打开文件 / Open File** (or **打开目录 / Open Directory**) and pick a parquet file or a folder of parquet files.
+1. Click **Open File** (or **Open Directory**) and pick a parquet file or a folder of parquet files.
 2. The schema, row count and file size are shown immediately, along with a preview of the first 100 rows.
 3. Query the data with SQL — the opened file is registered as the view `parquet_view`:
 
@@ -51,6 +54,7 @@ Download the installer for your platform from the [Releases](../../releases) pag
    The generated SQL is shown in the editor so you can learn/tweak it.
 5. Click **SQL Schema** to generate a `CREATE TABLE` statement for the loaded file and copy it.
 6. Image/audio BLOB cells show a thumbnail or player — click to preview in a modal, then **Export** to save the binary to disk.
+7. Switch the interface language via **Help → Language** (简体中文 / English); the choice is remembered across launches.
 
 ## Building from source
 
@@ -86,6 +90,7 @@ git push origin v0.1.0
 ├── ui/                  # frontend (vanilla JS, no bundler)
 │   ├── index.html
 │   ├── main.js
+│   ├── i18n.js          # zh-CN / en dictionary + runtime language switching
 │   └── styles.css
 ├── src-tauri/
 │   ├── src/lib.rs       # backend: DuckDB engine, tauri commands, native menu

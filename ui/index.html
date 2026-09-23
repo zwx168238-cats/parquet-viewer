@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,9 +9,9 @@
 <body>
   <header class="toolbar">
     <div class="toolbar-left">
-      <button id="btn-open-file" class="btn primary">打开文件</button>
-      <button id="btn-open-dir" class="btn">打开目录</button>
-      <span id="current-path" class="path-label" title="">未打开文件</span>
+      <button id="btn-open-file" class="btn primary" data-i18n="btn.openFile">Open File</button>
+      <button id="btn-open-dir" class="btn" data-i18n="btn.openDir">Open Directory</button>
+      <span id="current-path" class="path-label" title="" data-i18n="label.noFile">No file opened</span>
     </div>
     <div class="toolbar-right">
       <span id="file-stats" class="stats-label"></span>
@@ -20,48 +20,51 @@
 
   <main class="layout">
     <aside class="sidebar">
-      <div class="panel-title">Schema</div>
+      <div class="panel-title" data-i18n="panel.schema">Schema</div>
       <div id="schema-list" class="schema-list">
-        <div class="placeholder">打开 Parquet 文件后显示结构</div>
+        <div class="placeholder" data-i18n="schema.placeholder">Open a Parquet file to view its schema</div>
       </div>
     </aside>
 
     <section class="content">
       <div class="query-pane">
         <div class="query-toolbar">
-          <span class="query-label">SQL 查询(目标视图:<code>parquet_view</code>)</span>
+          <span class="query-label" data-i18n-html="query.label">SQL Query (target view: <code>parquet_view</code>)</span>
           <div class="quick-buttons">
-            <button class="btn small" data-sql="preview">预览数据</button>
-            <button class="btn small" data-sql="schema">表结构</button>
-            <button class="btn small" data-sql="count">行数</button>
-            <button class="btn small" data-sql="metadata">文件元数据</button>
-            <button class="btn small" id="btn-sql-schema">SQL Schema</button>
+            <button class="btn small" data-sql="preview" data-i18n="btn.preview">Preview</button>
+            <button class="btn small" data-sql="schema" data-i18n="btn.tableSchema">Table Schema</button>
+            <button class="btn small" data-sql="count" data-i18n="btn.rowCount">Row Count</button>
+            <button class="btn small" data-sql="metadata" data-i18n="btn.metadata">File Metadata</button>
+            <button class="btn small" id="btn-sql-schema" data-i18n="btn.sqlSchema">SQL Schema</button>
           </div>
         </div>
         <div class="filter-bar">
           <label
             class="filter-label"
-            title="输入过滤条件(无需 SELECT 和 WHERE),如: repo_path = 'Android' AND controlled = TRUE"
+            data-i18n="filter.label"
+            data-i18n-title="filter.title"
+            title="Enter a filter condition (no SELECT/WHERE needed), e.g. repo_path = 'Android' AND controlled = TRUE"
           >Filter Query (?)</label>
           <input
             id="filter-input"
             class="filter-input"
             type="text"
-            placeholder="如: repo_path = 'Android'"
+            data-i18n-placeholder="filter.placeholder"
+            placeholder="e.g. repo_path = 'Android'"
             spellcheck="false"
           />
-          <button id="btn-filter-exec" class="btn filter-exec">Execute</button>
-          <button id="btn-filter-clear" class="btn">Clear</button>
+          <button id="btn-filter-exec" class="btn filter-exec" data-i18n="filter.exec">Execute</button>
+          <button id="btn-filter-clear" class="btn" data-i18n="filter.clear">Clear</button>
           <span class="offset-group">
-            <label for="offset-input">Record Offset:</label>
+            <label for="offset-input" data-i18n="filter.offset">Record Offset:</label>
             <input id="offset-input" type="number" min="0" value="0" />
-            <label for="count-input">Record Count:</label>
+            <label for="count-input" data-i18n="filter.count">Record Count:</label>
             <input id="count-input" type="number" min="1" max="100000" value="1000" />
           </span>
         </div>
         <textarea id="sql-editor" spellcheck="false" rows="5">SELECT * FROM parquet_view LIMIT 100;</textarea>
         <div class="query-actions">
-          <button id="btn-run" class="btn primary">执行查询</button>
+          <button id="btn-run" class="btn primary" data-i18n="btn.run">Run Query</button>
           <span class="hint">Ctrl/Cmd + Enter</span>
           <span id="query-status" class="query-status"></span>
         </div>
@@ -74,7 +77,7 @@
           <span id="result-info"></span>
         </div>
         <div id="result-container" class="result-container">
-          <div class="placeholder">执行查询后在此显示结果</div>
+          <div class="placeholder" data-i18n="result.placeholder">Results appear here after running a query</div>
         </div>
       </div>
     </section>
@@ -86,8 +89,8 @@
       <div id="media-body" class="media-body"></div>
       <p id="media-info" class="about-version"></p>
       <div class="modal-actions">
-        <button id="media-export" class="btn primary">导出</button>
-        <button id="media-close" class="btn">关闭</button>
+        <button id="media-export" class="btn primary" data-i18n="media.export">Export</button>
+        <button id="media-close" class="btn" data-i18n="media.close">Close</button>
       </div>
     </div>
   </div>
@@ -95,11 +98,11 @@
   <!-- SQL Schema 对话框 -->
   <div id="schema-modal" class="modal-overlay hidden">
     <div class="modal schema-modal">
-      <h3 class="about-name">SQL Schema(CREATE TABLE)</h3>
+      <h3 class="about-name" data-i18n="schemaModal.title">SQL Schema (CREATE TABLE)</h3>
       <pre id="schema-sql" class="schema-sql"></pre>
       <div class="modal-actions">
-        <button id="schema-copy" class="btn primary">复制</button>
-        <button id="schema-close" class="btn">关闭</button>
+        <button id="schema-copy" class="btn primary" data-i18n="schemaModal.copy">Copy</button>
+        <button id="schema-close" class="btn" data-i18n="schemaModal.close">Close</button>
       </div>
     </div>
   </div>
@@ -112,14 +115,15 @@
       <p id="about-version" class="about-version"></p>
       <p id="about-license" class="about-license"></p>
       <div class="about-credits">
-        <p>跨平台 Parquet 查看与 SQL 查询工具</p>
-        <p>Built with Tauri + DuckDB</p>
-        <p>Inspired by mukunku/ParquetViewer (GPL-3.0)</p>
+        <p data-i18n="about.tagline">Cross-platform Parquet viewer with SQL query</p>
+        <p data-i18n="about.built">Built with Tauri + DuckDB</p>
+        <p data-i18n="about.inspired">Inspired by mukunku/ParquetViewer (GPL-3.0)</p>
       </div>
-      <button id="about-close" class="btn primary">关闭</button>
+      <button id="about-close" class="btn primary" data-i18n="about.close">Close</button>
     </div>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

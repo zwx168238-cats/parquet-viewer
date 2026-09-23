@@ -1,6 +1,7 @@
 // Parquet Viewer 前端逻辑(Tauri v2 global API,无打包器)
 const invoke = window.__TAURI__?.core?.invoke;
 const dialog = window.__TAURI__?.dialog;
+const t = window.i18n.t; // i18n 翻译函数(见 i18n.js)
 
 const MAX_RENDER_ROWS = 500; // 表格最多渲染的行数
 const DEFAULT_QUERY_LIMIT = 1000; // 单次查询后端返回的最大行数
@@ -53,28 +54,28 @@ function formatBytes(n) {
 
 async function pickPath(directory) {
   if (!dialog) {
-    showError("当前环境不支持系统对话框,请在 Tauri 应用中运行");
+    showError(t("err.noDialog"));
     return null;
   }
   try {
     const selected = await dialog.open({
       multiple: false,
       directory,
-      title: directory ? "选择包含 Parquet 文件的目录" : "选择 Parquet 文件",
+      title: directory ? t("dialog.titleDir") : t("dialog.titleFile"),
       filters: directory
         ? undefined
         : [{ name: "Parquet", extensions: ["parquet"] }],
     });
     return typeof selected === "string" ? selected : null;
   } catch (e) {
-    showError(`打开文件对话框失败: ${e}`);
+    showError(t("err.openDialog", { e }));
     return null;
   }
 }
 
 async function openPath(path) {
   clearError();
-  setStatus("正在打开…");
+  setStatus(t("status.opening"));
   try {
     const info = await invoke("open_path", { path });
     currentPath = path;
@@ -82,10 +83,10 @@ async function openPath(path) {
     el.currentPath.title = path;
 
     const parts = [];
-    if (info.file_count > 0) parts.push(`${info.file_count} 个文件`);
+    if (info.file_count > 0) parts.push(t("stat.files", { n: info.file_count }));
     if (info.file_size > 0) parts.push(formatBytes(info.file_size));
     if (info.num_rows !== null && info.num_rows !== undefined)
-      parts.push(`${info.num_rows.toLocaleString()} 行`);
+      parts.push(t("stat.rows", { n: info.num_rows.toLocaleString() }));
     el.fileStats.textContent = parts.join(" · ");
 
     renderSchema(info.schema);
@@ -95,7 +96,7 @@ async function openPath(path) {
     el.sqlEditor.value = "SELECT * FROM parquet_view LIMIT 100;";
     await runQuery();
   } catch (e) {
-    showError(`打开文件失败: ${e}`);
+    showError(t("err.open", { e }));
     setStatus("");
   }
 }
@@ -103,7 +104,7 @@ async function openPath(path) {
 function renderSchema(schema) {
   el.schemaList.innerHTML = "";
   if (!schema || schema.length === 0) {
-    el.schemaList.innerHTML = '<div class="placeholder">无 schema 信息</div>';
+    el.schemaList.innerHTML = `<div class="placeholder">${t("schema.none")}</div>`;
     return;
   }
   const frag = document.createDocumentFragment();
@@ -126,7 +127,7 @@ function renderSchema(schema) {
 // 快捷 SQL 模板
 function quickSql(kind) {
   if (!currentPath) {
-    showError("请先打开一个 Parquet 文件或目录");
+    showError(t("err.openFirst"));
     return null;
   }
   switch (kind) {
@@ -146,15 +147,15 @@ function quickSql(kind) {
 async function runQuery() {
   const sql = el.sqlEditor.value.trim();
   if (!sql) {
-    showError("请输入 SQL 语句");
+    showError(t("err.emptySql"));
     return;
   }
   if (!currentPath) {
-    showError("请先打开一个 Parquet 文件或目录");
+    showError(t("err.openFirst"));
     return;
   }
   clearError();
-  setStatus("执行中…");
+  setStatus(t("status.running"));
   el.run.disabled = true;
   try {
     const result = await invoke("run_query", {
@@ -164,10 +165,10 @@ async function runQuery() {
     });
     renderResult(result);
     let status = `${result.elapsed_ms} ms`;
-    if (result.truncated) status += ` · 结果已截断(超过 ${DEFAULT_QUERY_LIMIT} 行)`;
+    if (result.truncated) status += t("status.truncated", { n: DEFAULT_QUERY_LIMIT });
     setStatus(status);
   } catch (e) {
-    showError(`查询失败: ${e}`);
+    showError(t("err.query", { e }));
     setStatus("");
   } finally {
     el.run.disabled = false;
@@ -205,12 +206,12 @@ function buildFilterSql() {
 
 async function runFilter() {
   if (!currentPath) {
-    showError("请先打开一个 Parquet 文件或目录");
+    showError(t("err.openFirst"));
     return;
   }
   const built = buildFilterSql();
   if (!built) {
-    showError("请输入过滤条件");
+    showError(t("err.emptyFilter"));
     return;
   }
   // 把生成的完整 SQL 显示到编辑器,透明可学
@@ -231,7 +232,11 @@ async function fetchFilteredCount(filter, offset, count) {
     const total = r.rows?.[0]?.[0];
     if (typeof total === "number") {
       const to = Math.min(offset + count, total);
-      const loaded = `Loaded: ${total > 0 ? offset + 1 : 0} to ${to} Out of: ${total.toLocaleString()}`;
+      const loaded = t("status.loaded", {
+        from: total > 0 ? offset + 1 : 0,
+        to,
+        total: total.toLocaleString(),
+      });
       el.resultInfo.textContent = `${el.resultInfo.textContent} · ${loaded}`;
     }
   } catch {
@@ -264,19 +269,27 @@ function renderResult(result) {
   if (!result.columns || result.columns.length === 0) {
     el.resultInfo.textContent =
       result.row_count > 0
-        ? `已执行,无结果集(${result.elapsed_ms} ms)`
-        : `语句已执行(${result.elapsed_ms} ms)`;
+        ? t("result.executedNoSet", { ms: result.elapsed_ms })
+        : t("result.executed", { ms: result.elapsed_ms });
     el.resultContainer.innerHTML =
-      '<div class="placeholder">该语句没有返回结果集</div>';
+      `<div class="placeholder">${t("result.noResultSet")}</div>`;
     return;
   }
 
   const shown = Math.min(result.rows.length, MAX_RENDER_ROWS);
   const totalInfo =
     result.truncated || result.rows.length > MAX_RENDER_ROWS
-      ? `(仅显示前 ${shown} 行${result.truncated ? ",后端已截断" : ""})`
+      ? t("result.showingFirst", {
+          n: shown,
+          trunc: result.truncated ? t("result.truncSuffix") : "",
+        })
       : "";
-  el.resultInfo.textContent = `${result.rows.length} 行 × ${result.columns.length} 列 ${totalInfo} · ${result.elapsed_ms} ms`;
+  el.resultInfo.textContent = t("result.info", {
+    rows: result.rows.length,
+    cols: result.columns.length,
+    total: totalInfo,
+    ms: result.elapsed_ms,
+  });
 
   const table = document.createElement("table");
   table.className = "result-table";
@@ -358,7 +371,7 @@ function mediaElement(value, colName, rowIdx) {
     img.className = "cell-thumb";
     img.src = src;
     img.alt = colName;
-    img.title = `点击查看大图(${fmtSize(value.size)})`;
+    img.title = t("media.thumbTitle", { size: fmtSize(value.size) });
     img.addEventListener("click", () => openMediaModal(value, colName, rowIdx));
     return img;
   }
@@ -372,7 +385,7 @@ function mediaElement(value, colName, rowIdx) {
     wrap.appendChild(audio);
     const btn = document.createElement("button");
     btn.className = "btn small";
-    btn.textContent = "导出";
+    btn.textContent = t("media.exportBtn");
     btn.addEventListener("click", () => exportMedia(value, colName, rowIdx));
     wrap.appendChild(btn);
     return wrap;
@@ -397,8 +410,12 @@ function openMediaModal(value, colName, rowIdx) {
     audio.src = src;
     body.appendChild(audio);
   }
-  document.getElementById("media-info").textContent =
-    `${colName} · 第 ${rowIdx + 1} 行 · ${value.mime} · ${fmtSize(value.size)}`;
+  document.getElementById("media-info").textContent = t("media.info", {
+    col: colName,
+    row: rowIdx + 1,
+    mime: value.mime,
+    size: fmtSize(value.size),
+  });
   document.getElementById("media-modal").classList.remove("hidden");
 }
 
@@ -416,9 +433,9 @@ async function exportMedia(value, colName, rowIdx) {
       base64Data: value.base64,
       defaultName: name,
     });
-    if (saved) setStatus(`已导出: ${saved}`);
+    if (saved) setStatus(t("status.exported", { path: saved }));
   } catch (e) {
-    showError(`导出失败: ${e}`);
+    showError(t("err.export", { e }));
   }
 }
 
@@ -426,7 +443,7 @@ async function exportMedia(value, colName, rowIdx) {
 
 async function showSqlSchema() {
   if (!currentPath) {
-    showError("请先打开一个 Parquet 文件或目录");
+    showError(t("err.openFirst"));
     return;
   }
   try {
@@ -434,7 +451,7 @@ async function showSqlSchema() {
     document.getElementById("schema-sql").textContent = sql;
     document.getElementById("schema-modal").classList.remove("hidden");
   } catch (e) {
-    showError(`生成 SQL Schema 失败: ${e}`);
+    showError(t("err.schema", { e }));
   }
 }
 
@@ -490,8 +507,8 @@ const elAbout = {
 async function showAbout() {
   try {
     const info = await invoke("about_info");
-    elAbout.version.textContent = `Version ${info.version}`;
-    elAbout.license.textContent = `License: ${info.license}`;
+    elAbout.version.textContent = t("about.version", { v: info.version });
+    elAbout.license.textContent = t("about.license", { l: info.license });
   } catch {
     elAbout.version.textContent = "";
     elAbout.license.textContent = "";
@@ -547,9 +564,9 @@ document.getElementById("schema-copy").addEventListener("click", async () => {
   const sql = document.getElementById("schema-sql").textContent;
   try {
     await navigator.clipboard.writeText(sql);
-    setStatus("SQL Schema 已复制到剪贴板");
+    setStatus(t("status.copied"));
   } catch {
-    showError("复制失败,请手动选择文本复制");
+    showError(t("err.copy"));
   }
 });
 
@@ -567,7 +584,5 @@ document.addEventListener("keydown", (e) => {
 
 // 启动提示:若不在 Tauri 环境内运行
 if (!invoke) {
-  showError(
-    "未检测到 Tauri 运行时,请通过 `npm run dev` 或打包后的应用启动本工具"
-  );
+  showError(t("err.noTauri"));
 }

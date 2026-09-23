@@ -1,14 +1,39 @@
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use duckdb::types::{TimeUnit, Type, Value};
 use duckdb::Connection;
 use serde::Serialize;
-use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
-use tauri::Emitter;
+use tauri::menu::{
+    CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
+};
+use tauri::{Emitter, Manager};
 
 /// 单次查询默认返回的最大行数(前端可指定)
 const DEFAULT_LIMIT: usize = 1000;
+
+/// 全局语言状态("zh-CN" / "en"),由前端初始化时同步、原生菜单切换时更新。
+/// 命令与菜单据此产出对应语言的错误信息与菜单文案。
+struct LangState(Mutex<String>);
+
+impl LangState {
+    fn get(&self) -> String {
+        self.0
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| "en".to_string())
+    }
+}
+
+/// 双语文案助手:lang 为 "zh-CN" 时返回简体中文,否则(含未知语言)回退英文。
+fn tr(lang: &str, zh: &str, en: &str) -> String {
+    if lang == "zh-CN" {
+        zh.to_string()
+    } else {
+        en.to_string()
+    }
+}
 
 #[derive(Serialize)]
 struct ColumnInfo {
@@ -38,13 +63,25 @@ struct QueryResult {
 
 /// 打开一个 in-memory DuckDB 连接,并把目标 parquet 文件/目录注册为视图 `parquet_view`。
 /// 传入目录时 DuckDB 会自动递归读取其中所有 parquet 文件(含 Hive 分区目录)。
-fn open_conn(path: &str) -> Result<Connection, String> {
-    let conn = Connection::open_in_memory().map_err(|e| format!("无法创建内存数据库连接: {e}"))?;
+fn open_conn(path: &str, lang: &str) -> Result<Connection, String> {
+    let conn = Connection::open_in_memory().map_err(|e| {
+        tr(
+            lang,
+            &format!("无法创建内存数据库连接: {e}"),
+            &format!("Failed to create in-memory database connection: {e}"),
+        )
+    })?;
     let escaped = path.replace('\'', "''");
     conn.execute_batch(&format!(
         "CREATE OR REPLACE VIEW parquet_view AS SELECT * FROM read_parquet('{escaped}')"
     ))
-    .map_err(|e| format!("打开 Parquet 文件失败: {e}"))?;
+    .map_err(|e| {
+        tr(
+            lang,
+            &format!("打开 Parquet 文件失败: {e}"),
+            &format!("Failed to open Parquet file: {e}"),
+        )
+    })?;
 
     // 注册文件元数据视图 `parquet_meta`(兼容新旧 DuckDB 的表函数名)
     let meta_view = format!(
@@ -61,23 +98,28 @@ fn open_conn(path: &str) -> Result<Connection, String> {
 
 /// 打开单个 parquet 文件或目录,返回文件信息与 schema
 #[tauri::command]
-fn open_path(path: String) -> Result<FileInfo, String> {
+fn open_path(path: String, state: tauri::State<LangState>) -> Result<FileInfo, String> {
+    let lang = state.get();
     let p = Path::new(&path);
     if !p.exists() {
-        return Err(format!("路径不存在: {path}"));
+        return Err(tr(
+            &lang,
+            &format!("路径不存在: {path}"),
+            &format!("Path does not exist: {path}"),
+        ));
     }
     let is_dir = p.is_dir();
     let (file_size, file_count) = if is_dir {
         let mut size = 0u64;
         let mut count = 0usize;
-        collect_parquet_files(p, &mut count, &mut size)?;
+        collect_parquet_files(p, &mut count, &mut size, &lang)?;
         (size, count)
     } else {
         (std::fs::metadata(p).map(|m| m.len()).unwrap_or(0), 1)
     };
 
-    let conn = open_conn(&path)?;
-    let schema = describe_schema(&conn)?;
+    let conn = open_conn(&path, &lang)?;
+    let schema = describe_schema(&conn, &lang)?;
     let num_rows = count_rows(&conn).ok();
 
     Ok(FileInfo {
@@ -91,12 +133,23 @@ fn open_path(path: String) -> Result<FileInfo, String> {
 }
 
 /// 递归统计目录下的 parquet 文件数量与总大小
-fn collect_parquet_files(dir: &Path, count: &mut usize, size: &mut u64) -> Result<(), String> {
-    let entries = std::fs::read_dir(dir).map_err(|e| format!("读取目录失败: {e}"))?;
+fn collect_parquet_files(
+    dir: &Path,
+    count: &mut usize,
+    size: &mut u64,
+    lang: &str,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| {
+        tr(
+            lang,
+            &format!("读取目录失败: {e}"),
+            &format!("Failed to read directory: {e}"),
+        )
+    })?;
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            collect_parquet_files(&path, count, size)?;
+            collect_parquet_files(&path, count, size, lang)?;
         } else if path
             .extension()
             .and_then(|s| s.to_str())
@@ -110,13 +163,21 @@ fn collect_parquet_files(dir: &Path, count: &mut usize, size: &mut u64) -> Resul
     Ok(())
 }
 
-fn describe_schema(conn: &Connection) -> Result<Vec<ColumnInfo>, String> {
-    let mut stmt = conn
-        .prepare("DESCRIBE parquet_view")
-        .map_err(|e| format!("读取 schema 失败: {e}"))?;
-    let mut rows = stmt
-        .query([])
-        .map_err(|e| format!("读取 schema 失败: {e}"))?;
+fn describe_schema(conn: &Connection, lang: &str) -> Result<Vec<ColumnInfo>, String> {
+    let mut stmt = conn.prepare("DESCRIBE parquet_view").map_err(|e| {
+        tr(
+            lang,
+            &format!("读取 schema 失败: {e}"),
+            &format!("Failed to read schema: {e}"),
+        )
+    })?;
+    let mut rows = stmt.query([]).map_err(|e| {
+        tr(
+            lang,
+            &format!("读取 schema 失败: {e}"),
+            &format!("Failed to read schema: {e}"),
+        )
+    })?;
     let mut out = Vec::new();
     while let Some(row) = rows.next().map_err(|e| e.to_string())? {
         let name: String = row.get(0).map_err(|e| e.to_string())?;
@@ -140,21 +201,41 @@ fn count_rows(conn: &Connection) -> Result<i64, String> {
 
 /// 在已注册的 parquet 视图上执行任意 SQL,返回前 limit 行
 #[tauri::command]
-fn run_query(path: String, sql: String, limit: usize) -> Result<QueryResult, String> {
+fn run_query(
+    path: String,
+    sql: String,
+    limit: usize,
+    state: tauri::State<LangState>,
+) -> Result<QueryResult, String> {
+    let lang = state.get();
     let start = Instant::now();
     let limit = if limit == 0 { DEFAULT_LIMIT } else { limit };
 
-    let conn = open_conn(&path)?;
-    let mut stmt = conn
-        .prepare(&sql)
-        .map_err(|e| format!("SQL 解析失败: {e}"))?;
-    let mut rows = stmt.query([]).map_err(|e| format!("SQL 执行失败: {e}"))?;
+    let conn = open_conn(&path, &lang)?;
+    let mut stmt = conn.prepare(&sql).map_err(|e| {
+        tr(
+            &lang,
+            &format!("SQL 解析失败: {e}"),
+            &format!("SQL parse failed: {e}"),
+        )
+    })?;
+    let mut rows = stmt.query([]).map_err(|e| {
+        tr(
+            &lang,
+            &format!("SQL 执行失败: {e}"),
+            &format!("SQL execution failed: {e}"),
+        )
+    })?;
 
     // 通过 rows.as_ref() 获取列信息(语句已执行,且避免与 rows 的可变借用冲突)
     let (ncols, columns, column_types) = {
-        let s = rows
-            .as_ref()
-            .ok_or_else(|| "无法获取结果集列信息".to_string())?;
+        let s = rows.as_ref().ok_or_else(|| {
+            tr(
+                &lang,
+                "无法获取结果集列信息",
+                "Unable to obtain result set column info",
+            )
+        })?;
         let n = s.column_count();
         let cols = s.column_names();
         let types = (0..n)
@@ -382,14 +463,26 @@ fn sql_type(t: &str) -> &'static str {
 
 /// 参考原版功能:从 parquet schema 生成 CREATE TABLE 语句
 #[tauri::command]
-fn generate_sql_schema(path: String) -> Result<String, String> {
-    let conn = open_conn(&path)?;
-    let mut stmt = conn
-        .prepare("DESCRIBE parquet_view")
-        .map_err(|e| format!("读取 schema 失败: {e}"))?;
-    let mut rows = stmt
-        .query([])
-        .map_err(|e| format!("读取 schema 失败: {e}"))?;
+fn generate_sql_schema(
+    path: String,
+    state: tauri::State<LangState>,
+) -> Result<String, String> {
+    let lang = state.get();
+    let conn = open_conn(&path, &lang)?;
+    let mut stmt = conn.prepare("DESCRIBE parquet_view").map_err(|e| {
+        tr(
+            &lang,
+            &format!("读取 schema 失败: {e}"),
+            &format!("Failed to read schema: {e}"),
+        )
+    })?;
+    let mut rows = stmt.query([]).map_err(|e| {
+        tr(
+            &lang,
+            &format!("读取 schema 失败: {e}"),
+            &format!("Failed to read schema: {e}"),
+        )
+    })?;
     let mut cols = Vec::new();
     while let Some(row) = rows.next().map_err(|e| e.to_string())? {
         let name: String = row.get(0).map_err(|e| e.to_string())?;
@@ -399,7 +492,7 @@ fn generate_sql_schema(path: String) -> Result<String, String> {
     drop(rows);
     drop(stmt);
     if cols.is_empty() {
-        return Err("schema 为空".to_string());
+        return Err(tr(&lang, "schema 为空", "Schema is empty"));
     }
     let width = cols.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
     let body: Vec<String> = cols
@@ -422,12 +515,21 @@ async fn export_base64(
     app: tauri::AppHandle,
     base64_data: String,
     default_name: String,
+    state: tauri::State<'_, LangState>,
 ) -> Result<Option<String>, String> {
     use base64::Engine;
     use tauri_plugin_dialog::DialogExt;
+    // 先把语言取出并释放锁,避免跨 await 持有 MutexGuard
+    let lang = state.get();
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&base64_data)
-        .map_err(|e| format!("base64 解码失败: {e}"))?;
+        .map_err(|e| {
+            tr(
+                &lang,
+                &format!("base64 解码失败: {e}"),
+                &format!("base64 decode failed: {e}"),
+            )
+        })?;
     let Some(fp) = app
         .dialog()
         .file()
@@ -437,15 +539,33 @@ async fn export_base64(
         return Ok(None); // 用户取消
     };
     let Some(path) = fp.as_path() else {
-        return Err("无法解析保存路径".to_string());
+        return Err(tr(
+            &lang,
+            "无法解析保存路径",
+            "Unable to resolve save path",
+        ));
     };
-    std::fs::write(path, &bytes).map_err(|e| format!("写入失败: {e}"))?;
+    std::fs::write(path, &bytes).map_err(|e| {
+        tr(
+            &lang,
+            &format!("写入失败: {e}"),
+            &format!("Write failed: {e}"),
+        )
+    })?;
     Ok(Some(path.display().to_string()))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_media, sql_type};
+    use super::{detect_media, sql_type, tr};
+
+    #[test]
+    fn tr_picks_language() {
+        assert_eq!(tr("en", "中文", "English"), "English");
+        assert_eq!(tr("zh-CN", "中文", "English"), "中文");
+        // 未知语言回退英文(默认语言)
+        assert_eq!(tr("fr", "中文", "English"), "English");
+    }
 
     #[test]
     fn detects_png() {
@@ -502,58 +622,114 @@ fn about_info() -> serde_json::Value {
     })
 }
 
+/// 前端初始化/切换时同步语言到后端:更新状态并重建原生菜单(勾选态)。
+/// 不 emit change-language(前端已自行应用),避免回环。
+#[tauri::command]
+fn set_app_language(app: tauri::AppHandle, lang: String) {
+    if lang != "en" && lang != "zh-CN" {
+        return;
+    }
+    if let Some(st) = app.try_state::<LangState>() {
+        if let Ok(mut g) = st.0.lock() {
+            *g = lang.clone();
+        }
+    }
+    if let Ok(menu) = build_menu(&app, &lang) {
+        let _ = app.set_menu(menu);
+    }
+}
+
+/// 依据语言构建原生菜单。Help 下含 About 与 Language 子菜单(简体中文/English 勾选)。
+/// Edit 菜单必须保留,否则 macOS 上 Cmd+C/V/X/Z 等编辑快捷键失效。
+fn build_menu(
+    app: &tauri::AppHandle,
+    lang: &str,
+) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    let about_text = tr(lang, "关于 Parquet Viewer", "About Parquet Viewer");
+    let about = MenuItemBuilder::with_id("about", about_text.clone()).build(app)?;
+    let app_menu = SubmenuBuilder::with_id(app, "app", "Parquet Viewer")
+        .item(&about)
+        .separator()
+        .item(&PredefinedMenuItem::quit(app, None)?)
+        .build()?;
+    let edit = SubmenuBuilder::with_id(app, "edit", tr(lang, "编辑", "Edit"))
+        .item(&PredefinedMenuItem::undo(app, None)?)
+        .item(&PredefinedMenuItem::redo(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::cut(app, None)?)
+        .item(&PredefinedMenuItem::copy(app, None)?)
+        .item(&PredefinedMenuItem::paste(app, None)?)
+        .item(&PredefinedMenuItem::select_all(app, None)?)
+        .build()?;
+    let window = SubmenuBuilder::with_id(app, "window", tr(lang, "窗口", "Window"))
+        .item(&PredefinedMenuItem::minimize(app, None)?)
+        .item(&PredefinedMenuItem::maximize(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::close_window(app, None)?)
+        .build()?;
+    // 语言子菜单:两项互斥勾选
+    let lang_zh = CheckMenuItemBuilder::with_id("lang-zh-CN", "简体中文")
+        .checked(lang != "en")
+        .build(app)?;
+    let lang_en = CheckMenuItemBuilder::with_id("lang-en", "English")
+        .checked(lang == "en")
+        .build(app)?;
+    let language = SubmenuBuilder::with_id(app, "language", tr(lang, "语言", "Language"))
+        .item(&lang_zh)
+        .item(&lang_en)
+        .build()?;
+    let help_about = MenuItemBuilder::with_id("about", about_text).build(app)?;
+    let help = SubmenuBuilder::with_id(app, "help", tr(lang, "帮助", "Help"))
+        .item(&help_about)
+        .separator()
+        .item(&language)
+        .build()?;
+    MenuBuilder::new(app)
+        .item(&app_menu)
+        .item(&edit)
+        .item(&window)
+        .item(&help)
+        .build()
+}
+
+/// 菜单驱动的语言切换:更新状态 + 重建菜单 + emit 通知前端。
+fn set_language(app: &tauri::AppHandle, lang: &str) {
+    if let Some(st) = app.try_state::<LangState>() {
+        if let Ok(mut g) = st.0.lock() {
+            *g = lang.to_string();
+        }
+    }
+    if let Ok(menu) = build_menu(app, lang) {
+        let _ = app.set_menu(menu);
+    }
+    let _ = app.emit("change-language", lang);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(LangState(Mutex::new("en".to_string())))
         .invoke_handler(tauri::generate_handler![
             open_path,
             run_query,
             about_info,
             generate_sql_schema,
-            export_base64
+            export_base64,
+            set_app_language
         ])
         .setup(|app| {
-            // macOS 惯例:第一个菜单为应用名菜单,About 同时出现在应用菜单和 Help 菜单
-            // (Help > About 参考原版 ParquetViewer 的布局)
-            let about = MenuItemBuilder::with_id("about", "About Parquet Viewer").build(app)?;
-            let app_menu = SubmenuBuilder::with_id(app, "app", "Parquet Viewer")
-                .item(&about)
-                .separator()
-                .item(&PredefinedMenuItem::quit(app, None)?)
-                .build()?;
-            // Edit 菜单必须保留,否则 macOS 上 Cmd+C/V/X/Z 等编辑快捷键失效
-            let edit = SubmenuBuilder::with_id(app, "edit", "Edit")
-                .item(&PredefinedMenuItem::undo(app, None)?)
-                .item(&PredefinedMenuItem::redo(app, None)?)
-                .separator()
-                .item(&PredefinedMenuItem::cut(app, None)?)
-                .item(&PredefinedMenuItem::copy(app, None)?)
-                .item(&PredefinedMenuItem::paste(app, None)?)
-                .item(&PredefinedMenuItem::select_all(app, None)?)
-                .build()?;
-            let window = SubmenuBuilder::with_id(app, "window", "Window")
-                .item(&PredefinedMenuItem::minimize(app, None)?)
-                .item(&PredefinedMenuItem::maximize(app, None)?)
-                .separator()
-                .item(&PredefinedMenuItem::close_window(app, None)?)
-                .build()?;
-            let help_about =
-                MenuItemBuilder::with_id("about", "About Parquet Viewer").build(app)?;
-            let help = SubmenuBuilder::with_id(app, "help", "Help")
-                .item(&help_about)
-                .build()?;
-            let menu = MenuBuilder::new(app)
-                .item(&app_menu)
-                .item(&edit)
-                .item(&window)
-                .item(&help)
-                .build()?;
+            // 初始菜单:默认英文,前端 init 会立即调用 set_app_language 同步为实际语言
+            let handle = app.handle().clone();
+            let menu = build_menu(&handle, "en")?;
             app.set_menu(menu)?;
-            app.on_menu_event(|app, event| {
-                if event.id().as_ref() == "about" {
+            app.on_menu_event(|app, event| match event.id().as_ref() {
+                "about" => {
                     let _ = app.emit("show-about", ());
                 }
+                "lang-zh-CN" => set_language(app, "zh-CN"),
+                "lang-en" => set_language(app, "en"),
+                _ => {}
             });
             Ok(())
         })
