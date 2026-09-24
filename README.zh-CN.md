@@ -31,7 +31,29 @@
 | Linux | amd64 | `.deb` / `.AppImage` |
 | Windows | amd64 | `.msi` / `.exe` |
 
-> 安装包未做代码签名。macOS 首次打开时,请右键点击应用并选择 *打开*,以绕过 Gatekeeper。
+> 安装包未做代码签名,也未经过苹果公证。macOS 用户请参阅下方说明。
+
+### macOS:首次打开提示"已损坏"
+
+本应用仅做了 **ad-hoc 签名**(没有 Apple Developer ID,也未公证)。用浏览器从 Releases 下载 `.dmg` 时,macOS 会给它打上 `com.apple.quarantine` 隔离属性。在 Apple Silicon 上,Gatekeeper 会拒绝任何"带隔离属性且未公证"的应用,并给出具有误导性的提示:
+
+> "Parquet Viewer"已损坏,无法打开。你应该将其移到废纸篓。
+
+文件其实**并没有损坏** —— 这只是 Gatekeeper 对隔离属性的反应。(本地编译的版本能正常运行,是因为你自己创建的文件从来不会被加隔离属性。)
+
+首次启动时,任选一种方式即可:
+
+1. **移除隔离属性**(推荐,一次性、最可靠):
+
+   ```bash
+   sudo xattr -cr /Applications/Parquet\ Viewer.app
+   ```
+
+   执行后即可正常打开。
+
+2. **手动绕过 Gatekeeper** —— 在 Finder 中右键点击应用并选择 *打开*,在弹窗中确认。部分较新的 macOS 版本可能不再显示该选项,此时请改用方式 1。
+
+如果上述操作后仍被拦截,请到 **系统设置 → 隐私与安全性**,在页面底部找到并点击"仍要打开"进行放行。
 
 ## 使用方法
 

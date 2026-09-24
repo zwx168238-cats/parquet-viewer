@@ -27,6 +27,8 @@
       "filter.clear": "清除",
       "filter.offset": "记录偏移:",
       "filter.count": "记录数量:",
+      "filter.prev": "上一页",
+      "filter.next": "下一页",
       "result.placeholder": "执行查询后在此显示结果",
       // ---- 弹窗 ----
       "media.export": "导出",
@@ -96,6 +98,8 @@
       "filter.clear": "Clear",
       "filter.offset": "Record Offset:",
       "filter.count": "Record Count:",
+      "filter.prev": "Previous Page",
+      "filter.next": "Next Page",
       "result.placeholder": "Results appear here after running a query",
       "media.export": "Export",
       "media.close": "Close",

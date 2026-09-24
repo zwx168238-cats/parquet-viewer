@@ -3,10 +3,13 @@ const invoke = window.__TAURI__?.core?.invoke;
 const dialog = window.__TAURI__?.dialog;
 const t = window.i18n.t; // i18n 翻译函数(见 i18n.js)
 
-const MAX_RENDER_ROWS = 500; // 表格最多渲染的行数
+const MAX_RENDER_ROWS = 10000; // 表格最多渲染的行数(需覆盖单页记录数)
 const DEFAULT_QUERY_LIMIT = 1000; // 单次查询后端返回的最大行数
+const MAX_PAGE_SIZE = 100000; // 分页/记录数量的上限
 
 let currentPath = null; // 当前打开的 parquet 文件或目录
+let displayRowOffset = 0; // 结果表格 # 列的行号偏移(分页时显示全局行号)
+let filterTotal = null; // 最近一次过滤/分页匹配到的总行数(用于翻页按钮禁用)
 
 const el = {
   openFile: document.getElementById("btn-open-file"),
@@ -25,6 +28,8 @@ const el = {
   filterClear: document.getElementById("btn-filter-clear"),
   offsetInput: document.getElementById("offset-input"),
   countInput: document.getElementById("count-input"),
+  pagePrev: document.getElementById("btn-page-prev"),
+  pageNext: document.getElementById("btn-page-next"),
 };
 
 function showError(msg) {
@@ -79,6 +84,8 @@ async function openPath(path) {
   try {
     const info = await invoke("open_path", { path });
     currentPath = path;
+    filterTotal = null; // 切换文件时重置分页状态
+    displayRowOffset = 0;
     el.currentPath.textContent = path;
     el.currentPath.title = path;
 
@@ -144,7 +151,7 @@ function quickSql(kind) {
   }
 }
 
-async function runQuery() {
+async function runQuery(limit) {
   const sql = el.sqlEditor.value.trim();
   if (!sql) {
     showError(t("err.emptySql"));
@@ -154,6 +161,8 @@ async function runQuery() {
     showError(t("err.openFirst"));
     return;
   }
+  const effectiveLimit = limit && limit > 0 ? limit : DEFAULT_QUERY_LIMIT;
+  if (!limit || limit <= 0) displayRowOffset = 0; // 非分页查询,行号从 1 开始
   clearError();
   setStatus(t("status.running"));
   el.run.disabled = true;
@@ -161,11 +170,11 @@ async function runQuery() {
     const result = await invoke("run_query", {
       path: currentPath,
       sql,
-      limit: DEFAULT_QUERY_LIMIT,
+      limit: effectiveLimit,
     });
     renderResult(result);
     let status = `${result.elapsed_ms} ms`;
-    if (result.truncated) status += t("status.truncated", { n: DEFAULT_QUERY_LIMIT });
+    if (result.truncated) status += t("status.truncated", { n: effectiveLimit });
     setStatus(status);
   } catch (e) {
     showError(t("err.query", { e }));
@@ -187,50 +196,78 @@ function normalizeFilter(raw) {
   return filter.trim();
 }
 
-/** 根据过滤条件和分页参数拼接完整 SQL */
-function buildFilterSql() {
+/** 根据过滤条件与分页参数拼接完整 SQL(filter 可为空,表示浏览全部) */
+function buildFilterSql(offsetOverride) {
   const filter = normalizeFilter(el.filterInput.value);
-  if (!filter) return null;
-  const offset = Math.max(0, parseInt(el.offsetInput.value, 10) || 0);
+  const offset =
+    offsetOverride !== undefined
+      ? Math.max(0, offsetOverride)
+      : Math.max(0, parseInt(el.offsetInput.value, 10) || 0);
   const count = Math.min(
-    100000,
+    MAX_PAGE_SIZE,
     Math.max(1, parseInt(el.countInput.value, 10) || 1000)
   );
+  const where = filter ? ` WHERE ${filter}` : "";
   return {
     filter,
     offset,
     count,
-    sql: `SELECT * FROM parquet_view WHERE ${filter} OFFSET ${offset} LIMIT ${count};`,
+    sql: `SELECT * FROM parquet_view${where} OFFSET ${offset} LIMIT ${count};`,
   };
 }
 
-async function runFilter() {
+/** 执行过滤/分页查询;传入 offsetOverride 时按该偏移翻页 */
+async function runFilter(offsetOverride) {
   if (!currentPath) {
     showError(t("err.openFirst"));
     return;
   }
-  const built = buildFilterSql();
-  if (!built) {
-    showError(t("err.emptyFilter"));
-    return;
-  }
+  const built = buildFilterSql(offsetOverride);
+  el.offsetInput.value = String(built.offset); // 回写,保持输入框与翻页一致
   // 把生成的完整 SQL 显示到编辑器,透明可学
   el.sqlEditor.value = built.sql;
-  const lastOffset = built.offset;
-  await runQuery();
-  fetchFilteredCount(built.filter, lastOffset, built.count);
+  displayRowOffset = built.offset;
+  await runQuery(built.count);
+  fetchFilteredCount(built.filter, built.offset, built.count);
 }
 
-/** 异步统计过滤后的总行数,更新状态栏 */
+/** 翻页:delta = -1 上一页,+1 下一页,步长为当前记录数量(页大小) */
+function gotoPage(delta) {
+  const offset = Math.max(0, parseInt(el.offsetInput.value, 10) || 0);
+  const count = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, parseInt(el.countInput.value, 10) || 1000)
+  );
+  runFilter(Math.max(0, offset + delta * count));
+}
+
+/** 根据当前 offset/count 与总行数更新翻页按钮可用状态 */
+function updatePageButtons() {
+  const offset = Math.max(0, parseInt(el.offsetInput.value, 10) || 0);
+  const count = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, parseInt(el.countInput.value, 10) || 1000)
+  );
+  if (el.pagePrev) el.pagePrev.disabled = offset <= 0;
+  if (el.pageNext)
+    el.pageNext.disabled =
+      filterTotal !== null && filterTotal !== undefined
+        ? offset + count >= filterTotal
+        : false;
+}
+
+/** 异步统计过滤后的总行数,更新状态栏与翻页按钮 */
 async function fetchFilteredCount(filter, offset, count) {
+  const where = filter ? ` WHERE ${filter}` : "";
   try {
     const r = await invoke("run_query", {
       path: currentPath,
-      sql: `SELECT count(*) AS total FROM parquet_view WHERE ${filter}`,
+      sql: `SELECT count(*) AS total FROM parquet_view${where}`,
       limit: 1,
     });
     const total = r.rows?.[0]?.[0];
     if (typeof total === "number") {
+      filterTotal = total;
       const to = Math.min(offset + count, total);
       const loaded = t("status.loaded", {
         from: total > 0 ? offset + 1 : 0,
@@ -242,11 +279,13 @@ async function fetchFilteredCount(filter, offset, count) {
   } catch {
     // 统计失败不影响主查询结果展示
   }
+  updatePageButtons();
 }
 
 function clearFilter() {
   el.filterInput.value = "";
   el.offsetInput.value = "0";
+  filterTotal = null;
   el.sqlEditor.value = "SELECT * FROM parquet_view LIMIT 100;";
   runQuery();
 }
@@ -318,7 +357,7 @@ function renderResult(result) {
     const tr = document.createElement("tr");
     const idx = document.createElement("td");
     idx.className = "num";
-    idx.textContent = String(r + 1);
+    idx.textContent = String(displayRowOffset + r + 1);
     tr.appendChild(idx);
     result.rows[r].forEach((value, c) => {
       const td = document.createElement("td");
@@ -466,11 +505,19 @@ el.openDir.addEventListener("click", async () => {
   if (path) await openPath(path);
 });
 
-el.run.addEventListener("click", runQuery);
+el.run.addEventListener("click", () => runQuery());
 
-el.filterExec.addEventListener("click", runFilter);
+el.filterExec.addEventListener("click", () => runFilter());
 
 el.filterClear.addEventListener("click", clearFilter);
+
+el.pagePrev?.addEventListener("click", () => gotoPage(-1));
+
+el.pageNext?.addEventListener("click", () => gotoPage(1));
+
+// 手动修改偏移/数量时同步刷新翻页按钮可用状态
+el.offsetInput.addEventListener("change", updatePageButtons);
+el.countInput.addEventListener("change", updatePageButtons);
 
 el.filterInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {

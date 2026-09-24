@@ -31,7 +31,29 @@ Download the installer for your platform from the [Releases](../../releases) pag
 | Linux | amd64 | `.deb` / `.AppImage` |
 | Windows | amd64 | `.msi` / `.exe` |
 
-> Installers are not code-signed. On macOS, right-click the app and choose *Open* the first time to bypass Gatekeeper.
+> Installers are not code-signed or notarized by Apple. See the macOS note below.
+
+### macOS: "is damaged" prompt on first launch
+
+The app is only **ad-hoc signed** (no Apple Developer ID, no notarization). When you download the `.dmg` from a browser, macOS attaches a `com.apple.quarantine` attribute to it. On Apple Silicon, Gatekeeper then rejects any quarantined app that isn't notarized and shows the misleading message:
+
+> "Parquet Viewer" is damaged and can't be opened. You should move it to the Trash.
+
+The file is **not actually broken** — this is purely a Gatekeeper response to the quarantine attribute. (A locally built app runs fine because files you create yourself never get quarantined.)
+
+To launch it, pick either approach:
+
+1. **Remove the quarantine attribute** (recommended, one-time, most reliable):
+
+   ```bash
+   sudo xattr -cr /Applications/Parquet\ Viewer.app
+   ```
+
+   Then open the app normally.
+
+2. **Bypass Gatekeeper manually** — right-click the app in Finder and choose *Open*, then confirm in the dialog. On some recent macOS versions this option may no longer appear; if so, use approach 1.
+
+If Gatekeeper still blocks it after the above, also approve the app under **System Settings → Privacy & Security** (look for an "Open Anyway" button near the bottom).
 
 ## Usage
 

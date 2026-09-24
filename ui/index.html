@@ -60,6 +60,8 @@
             <input id="offset-input" type="number" min="0" value="0" />
             <label for="count-input" data-i18n="filter.count">Record Count:</label>
             <input id="count-input" type="number" min="1" max="100000" value="1000" />
+            <button id="btn-page-prev" class="btn small" data-i18n-title="filter.prev" title="Previous Page">◀</button>
+            <button id="btn-page-next" class="btn small" data-i18n-title="filter.next" title="Next Page">▶</button>
           </span>
         </div>
         <textarea id="sql-editor" spellcheck="false" rows="5">SELECT * FROM parquet_view LIMIT 100;</textarea>
